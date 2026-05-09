@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>金属离子浓度在线监控仪 - MQTT云流转</title>
+    <!-- 引入mqtt和Chart.js -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: "Microsoft YaHei", sans-serif;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .navbar {
+            background-color: #1e2b3c;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            color: white;
+            margin-bottom: 20px;
+        }
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+        }
+        .navbar-brand span:first-child {
+            background-color: #007bff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .navbar-tabs {
+            display: flex;
+            margin-left: 40px;
+            gap: 5px;
+        }
+        .tab {
+            padding: 8px 20px;
+            cursor: pointer;
+            border-radius: 4px 4px 0 0;
+            background-color: #2c3e50;
+        }
+        .tab.active {
+            background-color: #007bff;
+        }
+        .navbar-right {
+            margin-left: auto;
+            display: flex;
+            gap: 15px;
+        }
+        .navbar-right span {
+            color: #888;
+        }
+        .url-bar {
+            background-color: #2c3e50;
+            padding: 8px 15px;
+            display: flex;
+            align-items: center;
+            color: #888;
+            border-bottom: 1px solid #3a4a5a;
+        }
+        .url-bar .lock {
+            margin-right: 10px;
+        }
+        .url-bar .url {
+            color: #007bff;
+            margin-left: 10px;
+        }
+        .url-bar .warning {
+            margin-left: 10px;
+            color: #ffc107;
+        }
+        .main-title {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 20px;
+            font-size: 20px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: normal;
+        }
+        .status-online {
+            background-color: #28a745;
+            color: white;
+        }
+        .status-offline {
+            background-color: #dc3545;
+            color: white;
+        }
+        .status-connecting {
+            background-color: #ffc107;
+            color: #333;
+        }
+        .device-switch {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .device-btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 20px;
+            background-color: #2c3e50;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .device-btn.active {
+            background-color: #007bff;
+        }
+        .device-btn:hover {
+            background-color: #3a4a5a;
+        }
+        .device-info {
+            background-color: #34495e;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .device-name {
+            font-size: 18px;
+        }
+        .acid-info {
+            background-color: #2c3e50;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .data-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            padding: 24px 20px;
+            color: white;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }
+        .data-card:hover {
+            transform: translateY(-2px);
+        }
+        .data-card:nth-child(2) {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .data-card:nth-child(3) {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .data-label {
+            font-size: 16px;
+            opacity: 0.9;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+        }
+        .data-value {
+            font-size: 42px;
+            font-weight: bold;
+            margin-bottom: 6px;
+            line-height: 1.2;
+        }
+        .data-unit {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            justify-content: flex-start;
+        }
+        .btn {
+            padding: 10px 28px;
+            border: none;
+            border-radius: 30px;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #c82333;
+            transform: translateY(-1px);
+        }
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #218838;
+            transform: translateY(-1px);
+        }
+        .btn-warning {
+            background-color: #ffc107;
+            color: #333;
+        }
+        .btn-warning:hover {
+            background-color: #e0a800;
+            transform: translateY(-1px);
+        }
+        
+        .chart-container {
+            background-color: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            margin-bottom: 30px;
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .chart-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        .chart-legend {
+            display: flex;
+            gap: 20px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .legend-color.blue {
+            background-color: #007bff;
+        }
+        .legend-color.green {
+            background-color: #28a745;
+        }
+        .legend-color.orange {
+            background-color: #fd7e14;
+        }
+        .chart-wrapper {
+            width: 100%;
+            height: 320px;
+            position: relative;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .history-section {
+            margin-top: 10px;
+            background: white;
+            border-radius: 12px;
+            overflow-x: auto;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            border-radius: 12px;
+            overflow: hidden;
+            min-width: 500px;
+        }
+        .history-table th {
+            background-color: #f8f9fa;
+            padding: 14px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #2c3e50;
+            border-bottom: 2px solid #e2e8f0;
+            font-size: 14px;
+        }
+        .history-table td {
+            padding: 12px;
+            border-bottom: 1px solid #edf2f7;
+            color: #4a5568;
+            font-size: 14px;
+        }
+        .history-table tr:hover {
+            background-color: #f7fafc;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            color: #718096;
+            border-top: 1px solid #e2e8f0;
+            font-size: 13px;
+        }
+
+        @media (max-width: 768px) {
+            .data-grid {
+                gap: 15px;
+            }
+            .data-value {
+                font-size: 32px;
+            }
+            .chart-wrapper {
+                height: 260px;
+            }
+            .btn {
+                padding: 8px 20px;
+                font-size: 14px;
+            }
+            .container {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div class="navbar-brand">
+            <span>新建标签页</span>
+            <span>金属离子浓度在线监控仪</span>
+        </div>
+        <div class="navbar-tabs">
+            <div class="tab active">MQTT 云流转接收数据</div>
+        </div>
+        <div class="navbar-right">
+            <span>🔒 MQTT</span>
+            <span>|</span>
+            <span>实时推送</span>
+        </div>
+    </div>
+    
+    <div class="url-bar">
+        <span class="lock">🔒</span>
+        <span>阿里云物联网平台</span>
+        <span class="url" id="apiDisplay">MQTT 云流转</span>
+        <span class="warning" id="statusDisplay">连接中...</span>
+    </div>
+    
+    <div class="container">
+        <div class="main-title">
+            阳极氧化工艺金属铝离子浓度在线监控仪
+            <span id="connectionBadge" class="status-badge status-connecting">连接中</span>
+        </div>
+        
+        <!-- 设备切换按钮组（根据配置动态生成） -->
+        <div class="device-switch" id="deviceSwitch"></div>
+        
+        <!-- 三个核心数据卡片，布局已修正为整齐的三列 -->
+        <div class="data-grid">
+            <div class="data-card">
+                <div class="data-label">实时比重值</div>
+                <div class="data-value" id="gravity">--</div>
+                <div class="data-unit">g/cm³</div>
+            </div>
+            <div class="data-card">
+                <div class="data-label">实时离子浓度</div>
+                <div class="data-value" id="concentration">--</div>
+                <div class="data-unit">g/L</div>
+            </div>
+            <div class="data-card">
+                <div class="data-label">实时温度</div>
+                <div class="data-value" id="temperature">--</div>
+                <div class="data-unit">°C</div>
+            </div>
+        </div>
+        
+        <!-- 按钮组 -->
+        <div class="button-group">
+            <button class="btn btn-primary" onclick="startRecording()">开始记录</button>
+            <button class="btn btn-danger" onclick="stopRecording()">停止记录</button>
+            <button class="btn btn-success" onclick="resetChart()">重置图表</button>
+            <button class="btn btn-warning" onclick="viewHistory()">查看历史记录</button>
+        </div>
+        
+        <!-- 图表区域 - 修复了缺少闭合div的问题 -->
+        <div class="chart-container">
+            <div class="chart-header">
+                <span class="chart-title">实时数据曲线（最近20个点）</span>
+                <div class="chart-legend">
+                    <div class="legend-item"><span class="legend-color blue"></span>比重值</div>
+                    <div class="legend-item"><span class="legend-color green"></span>离子浓度</div>
+                    <div class="legend-item"><span class="legend-color orange"></span>温度</div>
+                </div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="realtimeChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- 历史记录表格区域，增加独立容器确保排版整齐 -->
+        <div class="history-section">
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>比重值 (g/cm³)</th>
+                        <th>离子浓度 (g/L)</th>
+                        <th>温度 (°C)</th>
+                    </tr>
+                </thead>
+                <tbody id="history-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // ================== MQTT 配置信息 ==================
+        // 请根据您的阿里云物联网平台信息填写
+        const MQTT_CONFIG = {
+            host: "wss://io8c3oonSdo.iot-as-mqtt.cn-shanghai.aliyuncs.com/mqtt",  // WebSocket连接地址
+            options: {
+                clientId: "io8c3oonSdo.web_esp8266|securemode=2,signmethod=hmacsha256,timestamp=1773233333833|",
+                username: "web_esp8266&io8c3oonSdo",
+                password: "41815e39150a6106a97f974253f1fba805782ec2bbc90d531e1bcc5ca4af304b",
+                keepalive: 60,
+                connectTimeout: 4000,
+                cleanSession: true
+            },
+            topic: "/sys/io8c3oonSdo/web_esp8266/thing/service/property/set"  // 订阅的主题
+        };
+        
+        // 定义多个设备的配置（用于界面显示）
+        const DEVICES = [
+            {
+                id: 'dev1',
+                name: '设备1 (ESP8266)',
+                productKey: 'io8c3oonSdo',
+                deviceName: 'web_esp8266'
+            },
+            {
+                id: 'dev2',
+                name: '设备2',
+                productKey: 'YOUR_PRODUCT_KEY_2',
+                deviceName: 'YOUR_DEVICE_NAME_2'
+            }
+        ];
+        
+        // 当前选中的设备索引
+        let currentDeviceIndex = 0;
+        // ===================================================
+
+        // 全局变量
+        let isRecording = true;
+        let chartInstance = null;
+        let mqttClient = null;
+
+        // 获取当前设备配置
+        function currentDevice() {
+            return DEVICES[currentDeviceIndex];
+        }
+
+        // 获取当前设备的历史存储key
+        function getStorageKey() {
+            return 'monitor_history_' + currentDevice().id;
+        }
+
+        // 更新连接状态显示
+        function updateConnectionStatus(status, message) {
+            const badge = document.getElementById('connectionBadge');
+            const statusDisplay = document.getElementById('statusDisplay');
+            badge.textContent = message;
+            badge.className = 'status-badge status-' + status;
+            statusDisplay.textContent = message;
+        }
+
+        // ========== MQTT 连接相关函数 ==========
+        function connectMQTT() {
+            if (!MQTT_CONFIG.host || MQTT_CONFIG.host.includes('你的域名')) {
+                updateConnectionStatus('offline', '请填写MQTT配置');
+                console.warn('请先在代码开头填写MQTT配置信息');
+                return;
+            }
+
+            try {
+                mqttClient = mqtt.connect(MQTT_CONFIG.host, MQTT_CONFIG.options);
+
+                mqttClient.on('connect', () => {
+                    console.log('MQTT连接成功');
+                    updateConnectionStatus('online', '已连接');
+                    
+                    // 订阅主题
+                    mqttClient.subscribe(MQTT_CONFIG.topic, { qos: 0 }, (err) => {
+                        if (err) {
+                            console.error('订阅失败:', err);
+                        } else {
+                            console.log('订阅成功:', MQTT_CONFIG.topic);
+                        }
+                    });
+                });
+
+                mqttClient.on('message', (topic, message) => {
+                    const msgStr = message.toString();
+                    console.log('收到消息:', msgStr);
+                    
+                    try {
+                        const jsonData = JSON.parse(msgStr);
+                        
+                        // 解析数据 - 适配您的数据结构
+                        let gravity = '--', concentration = '--', temperature = '--';
+                        
+                        // 根据实际数据结构解析，这里支持两种常见格式
+                        if (jsonData.items) {
+                            // 格式1: { "items": { "proportion": { "value": 1.234 }, "iron": { "value": 5.6 }, "temp": { "value": 25.5 } } }
+                            gravity = jsonData.items.proportion?.value?.toFixed(4) || '--';
+                            concentration = jsonData.items.iron?.value?.toFixed(1) || '--';
+                            temperature = jsonData.items.temp?.value?.toFixed(1) || '--';
+                        } else if (jsonData.params) {
+                            // 格式2: { "params": { "proportion": 1.234, "iron": 5.6, "temp": 25.5 } }
+                            gravity = jsonData.params.proportion?.toFixed(4) || '--';
+                            concentration = jsonData.params.iron?.toFixed(1) || '--';
+                            temperature = jsonData.params.temp?.toFixed(1) || '--';
+                        } else {
+                            // 格式3: 直接包含字段
+                            gravity = jsonData.proportion?.toFixed(4) || '--';
+                            concentration = jsonData.iron?.toFixed(1) || '--';
+                            temperature = jsonData.temp?.toFixed(1) || '--';
+                        }
+                        
+                        // 更新界面显示
+                        document.getElementById('gravity').textContent = gravity;
+                        document.getElementById('concentration').textContent = concentration;
+                        document.getElementById('temperature').textContent = temperature;
+                        
+                        // 添加到图表
+                        const newData = { gravity, concentration, temperature };
+                        addDataToChart(newData);
+                        
+                        // 保存历史记录
+                        if (isRecording) {
+                            saveToHistory(newData);
+                        }
+                        
+                    } catch (e) {
+                        console.error('解析消息出错:', e, msgStr);
+                    }
+                });
+
+                mqttClient.on('error', (err) => {
+                    console.error('MQTT错误:', err);
+                    updateConnectionStatus('offline', '连接错误');
+                });
+
+                mqttClient.on('close', () => {
+                    console.log('MQTT连接关闭');
+                    updateConnectionStatus('offline', '已断开');
+                });
+
+            } catch (error) {
+                console.error('MQTT连接异常:', error);
+                updateConnectionStatus('offline', '连接失败');
+            }
+        }
+
+        // 断开MQTT连接
+        function disconnectMQTT() {
+            if (mqttClient) {
+                mqttClient.end();
+                mqttClient = null;
+            }
+        }
+
+        // 图表相关函数
+        function initChart() {
+            const ctx = document.getElementById('realtimeChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: '比重值', data: [], borderColor: '#007bff', backgroundColor: 'rgba(0,123,255,0.1)', borderWidth: 2, pointRadius: 3, tension: 0.2 },
+                        { label: '离子浓度', data: [], borderColor: '#28a745', backgroundColor: 'rgba(40,167,69,0.1)', borderWidth: 2, pointRadius: 3, tension: 0.2 },
+                        { label: '温度', data: [], borderColor: '#fd7e14', backgroundColor: 'rgba(253,126,20,0.1)', borderWidth: 2, pointRadius: 3, tension: 0.2 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: { mode: 'index', intersect: false },
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { 
+                            ticks: { maxTicksLimit: 6, font: { size: 10 } },
+                            grid: { display: false }
+                        },
+                        y: { 
+                            beginAtZero: false,
+                            grid: { color: '#e9ecef' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function addDataToChart(data) {
+            if (!chartInstance) return;
+            
+            // 只添加有效数据
+            if (data.gravity === '--' && data.concentration === '--' && data.temperature === '--') return;
+            
+            const now = new Date();
+            const timeLabel = now.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
+
+            chartInstance.data.labels.push(timeLabel);
+            chartInstance.data.datasets[0].data.push(parseFloat(data.gravity) || 0);
+            chartInstance.data.datasets[1].data.push(parseFloat(data.concentration) || 0);
+            chartInstance.data.datasets[2].data.push(parseFloat(data.temperature) || 0);
+
+            if (chartInstance.data.labels.length > 20) {
+                chartInstance.data.labels.shift();
+                chartInstance.data.datasets[0].data.shift();
+                chartInstance.data.datasets[1].data.shift();
+                chartInstance.data.datasets[2].data.shift();
+            }
+            chartInstance.update();
+        }
+
+        function resetChartData() {
+            if (!chartInstance) return;
+            chartInstance.data.labels = [];
+            chartInstance.data.datasets[0].data = [];
+            chartInstance.data.datasets[1].data = [];
+            chartInstance.data.datasets[2].data = [];
+            chartInstance.update();
+        }
+
+        // 历史记录保存与加载
+        function saveToHistory(data) {
+            const tbody = document.getElementById('history-body');
+            const now = new Date();
+            const timeStr = now.toLocaleString('zh-CN', { hour12: false });
+            const record = {
+                time: timeStr,
+                gravity: data.gravity,
+                concentration: data.concentration,
+                temperature: data.temperature
+            };
+
+            // 跳过无效数据
+            if (data.gravity === '--' && data.concentration === '--' && data.temperature === '--') return;
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${record.time}</td>
+                <td>${record.gravity}</td>
+                <td>${record.concentration}</td>
+                <td>${record.temperature}</td>
+            `;
+            tbody.insertBefore(row, tbody.firstChild);
+            while (tbody.children.length > 10) tbody.removeChild(tbody.lastChild);
+
+            const storageKey = getStorageKey();
+            let history = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            history.unshift(record);
+            if (history.length > 50) history.pop();
+            localStorage.setItem(storageKey, JSON.stringify(history));
+        }
+
+        function loadHistory() {
+            const tbody = document.getElementById('history-body');
+            tbody.innerHTML = '';
+            const storageKey = getStorageKey();
+            const history = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            history.slice(0, 10).forEach(record => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${record.time}</td>
+                    <td>${record.gravity}</td>
+                    <td>${record.concentration}</td>
+                    <td>${record.temperature}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // 按钮功能 (逻辑保持不变)
+        function startRecording() { isRecording = true; alert('开始记录'); }
+        function stopRecording() { isRecording = false; alert('停止记录'); }
+        function resetChart() { resetChartData(); alert('图表已重置'); }
+        function viewHistory() {
+            const storageKey = getStorageKey();
+            const count = (JSON.parse(localStorage.getItem(storageKey) || '[]')).length;
+            alert(`当前设备本地存储共有 ${count} 条历史记录`);
+        }
+
+        // 设备切换
+        function switchDevice(index) {
+            currentDeviceIndex = index;
+            // 更新按钮样式
+            document.querySelectorAll('.device-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i === index);
+            });
+            // 清空图表
+            resetChartData();
+            // 加载对应设备的历史
+            loadHistory();
+            // 注意: 切换设备时MQTT连接保持原样（按照初始配置）
+            // 若需切换订阅可在此处拓展，但题目要求逻辑不动，故保持原MQTT连接
+        }
+
+        // 渲染设备切换按钮
+        function renderDeviceButtons() {
+            const container = document.getElementById('deviceSwitch');
+            container.innerHTML = '';
+            DEVICES.forEach((device, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'device-btn' + (index === currentDeviceIndex ? ' active' : '');
+                btn.textContent = device.name;
+                btn.onclick = () => switchDevice(index);
+                container.appendChild(btn);
+            });
+        }
+
+        // 初始化
+        window.onload = function() {
+            renderDeviceButtons();
+            initChart();
+            loadHistory();
+            
+            // 检查MQTT配置
+            if (!MQTT_CONFIG.host || MQTT_CONFIG.host.includes('你的域名')) {
+                updateConnectionStatus('offline', '请填写MQTT配置');
+                alert('请在代码开头的 MQTT_CONFIG 中填写您的MQTT连接信息');
+                return;
+            }
+            
+            // 连接MQTT
+            connectMQTT();
+        };
+
+        // 清理资源
+        window.onbeforeunload = function() {
+            disconnectMQTT();
+        };
+    </script>
+</body>
+</html>
